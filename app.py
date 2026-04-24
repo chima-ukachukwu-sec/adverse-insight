@@ -28,7 +28,7 @@ with st.sidebar:
     """)
     st.divider()
     st.caption("Built for the Codex Creator Challenge")
-    st.markdown("[GitHub Repo](https://github.com)")
+    st.markdown("[GitHub Repo](https://github.com/chima-ukachukwu-sec/adverse-insight)")
     
     st.divider()
     st.markdown("### Sample Contracts")
@@ -137,7 +137,15 @@ if uploaded_file:
             ))
             fig.update_layout(
                 polar=dict(radialaxis=dict(visible=True, range=[0, 100])),
-                showlegend=True
+                showlegend=True,
+                margin=dict(l=80, r=80, t=40, b=40),
+                legend=dict(
+                    orientation="h",
+                    yanchor="bottom",
+                    y=-0.2,
+                    xanchor="center",
+                    x=0.5
+                )
             )
             
             col1, col2 = st.columns([1, 1])
@@ -146,8 +154,9 @@ if uploaded_file:
             with col2:
                 st.metric("Total Clauses", len(st.session_state.clauses))
                 red_count = len([c for c in st.session_state.scored_clauses if c.get("red_flag")])
-                st.metric("Red-Flagged Clauses", red_count, delta=f"{red_count} critical" if red_count > 0 else "0")
+                st.metric("Red-Flagged Clauses", red_count, delta=f"{red_count} critical" if red_count > 0 else None, delta_color="inverse")
                 st.metric("Highest Risk Score", f"{max(c.get('financial_liability', 0) for c in st.session_state.scored_clauses)}/100")
+                st.caption("Scores above 70 indicate clauses you should negotiate or reject.")
         
         with tab2:
             st.subheader("Clause-by-Clause Analysis")
@@ -179,16 +188,16 @@ if uploaded_file:
             st.subheader("Auto-Generated Negotiation Scripts")
             
             if st.session_state.negotiation_points:
-                # Single copy button for all scripts
+                # Single download button for all scripts
                 all_scripts = "\n\n---\n\n".join([
                     f"**Re: {n.get('clause_type', 'Clause')} (Clause {n.get('clause_id', 'N/A')})**\n{n.get('negotiation_script', '')}"
                     for n in st.session_state.negotiation_points
                 ])
                 
                 st.download_button(
-                    label="📧 Download as Email Draft",
+                    label="📧 Download Negotiation Scripts (.txt)",
                     data=all_scripts,
-                    file_name="negotiation_points.txt",
+                    file_name="adverse_insight_negotiation_points.txt",
                     mime="text/plain"
                 )
                 
@@ -198,7 +207,7 @@ if uploaded_file:
                     st.markdown(f"### {n.get('clause_type', 'Clause')} (Clause {n.get('clause_id', 'N/A')})")
                     st.success(n.get('negotiation_script', 'N/A'))
             else:
-                st.info("No red-flagged clauses detected. No negotiation points needed.")
+                st.info("No red-flagged clauses detected. This contract appears balanced. No negotiation points needed.")
         
         # ── DISCLAIMER ──
         st.divider()
@@ -216,5 +225,5 @@ else:
     - **Flags** problematic clauses in red
     - **Drafts** negotiation scripts you can use immediately
     
-    Built with a **3-agent AI chain** — extraction, adversarial scoring, and negotiation drafting — all orchestrated through Codex.
+    Built with a **3-agent AI chain** — extraction, adversarial scoring, and negotiation drafting — all orchestrated through Codex and the OpenAI API.
     """)
