@@ -1,0 +1,20 @@
+INDEPENDENT CONTRACTOR AGREEMENT (SAMPLE)
+
+This sample agreement is fictional and used only to demonstrate automated
+contract risk triage. No real party is described.
+
+1. SERVICES. Contractor shall provide software development services as directed by Client from time to time.
+
+2. PAYMENT. Client shall pay Contractor within ninety (90) days of invoice receipt. Client may withhold payment in whole or in part if, in Client's sole discretion, the work is deemed unsatisfactory.
+
+3. INDEMNIFICATION. Contractor shall indemnify, defend and hold harmless Client from any and all claims, damages, losses and expenses of any kind arising out of or relating to the services, without limitation as to amount and regardless of the cause.
+
+4. INTELLECTUAL PROPERTY. All work product, together with any pre-existing materials, tools, libraries or know-how used by Contractor in performing the services, shall be the exclusive property of Client.
+
+5. NON-COMPETE. For a period of five (5) years following termination, Contractor shall not provide services of any kind to any business that competes with Client in any market, worldwide.
+
+6. TERMINATION. Client may terminate this Agreement immediately for any reason without notice. Contractor may terminate only upon one hundred and twenty (120) days written notice.
+
+7. LIABILITY. Client's total liability under this Agreement shall not exceed one hundred dollars ($100). Contractor's liability shall be unlimited.
+
+8. GOVERNING LAW. This Agreement is governed by the laws of a jurisdiction selected by Client at the time any dispute arises.

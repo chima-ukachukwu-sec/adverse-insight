@@ -1,0 +1,159 @@
+{
+  "_note": "A real saved run of the agent chain against samples/one-sided-contract.txt, captured August 2026. Nothing here is hand-written: these are the model's own clause splits, scores, rationales and negotiation drafts. Used so the app is explorable without an API key and without spending on a demo. Scores vary between runs; this is one run, not a canonical answer.",
+  "clauses": [
+    {
+      "clause_id": 1,
+      "clause_type": "Services",
+      "source_quote": "Contractor shall provide software development services as directed by Client from time to time.",
+      "plain_english_summary": "The contractor agrees to provide software development services as requested by the client."
+    },
+    {
+      "clause_id": 2,
+      "clause_type": "Payment Terms",
+      "source_quote": "Client shall pay Contractor within ninety (90) days of invoice receipt. Client may withhold payment in whole or in part if, in Client's sole discretion, the work is deemed unsatisfactory.",
+      "plain_english_summary": "The client will pay the contractor within 90 days of receiving an invoice, but can withhold payment if the work is not satisfactory."
+    },
+    {
+      "clause_id": 3,
+      "clause_type": "Indemnification",
+      "source_quote": "Contractor shall indemnify, defend and hold harmless Client from any and all claims, damages, losses and expenses of any kind arising out of or relating to the services, without limitation as to amount and regardless of the cause.",
+      "plain_english_summary": "The contractor must cover all claims and losses connected to the services, with no cap on the amount."
+    },
+    {
+      "clause_id": 4,
+      "clause_type": "Intellectual Property",
+      "source_quote": "All work product, together with any pre-existing materials, tools, libraries or know-how used by Contractor in performing the services, shall be the exclusive property of Client.",
+      "plain_english_summary": "The client owns everything produced, including tools and know-how the contractor already had."
+    },
+    {
+      "clause_id": 5,
+      "clause_type": "Non-Compete",
+      "source_quote": "For a period of five (5) years following termination, Contractor shall not provide services of any kind to any business that competes with Client in any market, worldwide.",
+      "plain_english_summary": "The contractor cannot work for competing businesses for five years after the agreement ends."
+    },
+    {
+      "clause_id": 6,
+      "clause_type": "Termination",
+      "source_quote": "Client may terminate this Agreement immediately for any reason without notice. Contractor may terminate only upon one hundred and twenty (120) days written notice.",
+      "plain_english_summary": "The client can end the agreement at any time without notice, while the contractor must give 120 days' notice to terminate."
+    },
+    {
+      "clause_id": 7,
+      "clause_type": "Liability Cap",
+      "source_quote": "Client's total liability under this Agreement shall not exceed one hundred dollars ($100). Contractor's liability shall be unlimited.",
+      "plain_english_summary": "The client's financial responsibility is capped at $100, while the contractor has no limit on their liability."
+    },
+    {
+      "clause_id": 8,
+      "clause_type": "Governing Law",
+      "source_quote": "This Agreement is governed by the laws of a jurisdiction selected by Client at the time any dispute arises.",
+      "plain_english_summary": "The laws that will apply to this agreement will be chosen by the client when a dispute occurs."
+    }
+  ],
+  "scored": [
+    {
+      "clause_id": 1,
+      "clause_type": "Services",
+      "financial_liability": 10,
+      "termination_asymmetry": 20,
+      "data_rights_risk": 0,
+      "red_flag": false,
+      "severity_rationale": "No significant risks identified in the service provision clause."
+    },
+    {
+      "clause_id": 2,
+      "clause_type": "Payment Terms",
+      "financial_liability": 60,
+      "termination_asymmetry": 80,
+      "data_rights_risk": 0,
+      "red_flag": true,
+      "severity_rationale": "Client has unilateral discretion to withhold payment, creating significant financial risk for the Contractor."
+    },
+    {
+      "clause_id": 3,
+      "clause_type": "Indemnification",
+      "financial_liability": 80,
+      "termination_asymmetry": 30,
+      "data_rights_risk": 0,
+      "red_flag": true,
+      "severity_rationale": "The unlimited indemnification obligation poses a high financial liability risk for the Contractor."
+    },
+    {
+      "clause_id": 4,
+      "clause_type": "Intellectual Property",
+      "financial_liability": 0,
+      "termination_asymmetry": 0,
+      "data_rights_risk": 70,
+      "red_flag": true,
+      "severity_rationale": "The clause grants exclusive ownership of all work product, which could be excessively broad."
+    },
+    {
+      "clause_id": 5,
+      "clause_type": "Non-Compete",
+      "financial_liability": 0,
+      "termination_asymmetry": 90,
+      "data_rights_risk": 0,
+      "red_flag": true,
+      "severity_rationale": "The five-year non-compete clause imposes significant restrictions on the Contractor's future employment opportunities."
+    },
+    {
+      "clause_id": 6,
+      "clause_type": "Termination",
+      "financial_liability": 0,
+      "termination_asymmetry": 100,
+      "data_rights_risk": 0,
+      "red_flag": true,
+      "severity_rationale": "The clause allows the Client to terminate the agreement immediately without notice, creating extreme termination asymmetry."
+    },
+    {
+      "clause_id": 7,
+      "clause_type": "Liability Cap",
+      "financial_liability": 100,
+      "termination_asymmetry": 0,
+      "data_rights_risk": 0,
+      "red_flag": true,
+      "severity_rationale": "The unlimited liability for the Contractor combined with a low cap for the Client creates a severe financial imbalance."
+    },
+    {
+      "clause_id": 8,
+      "clause_type": "Governing Law",
+      "financial_liability": 0,
+      "termination_asymmetry": 0,
+      "data_rights_risk": 0,
+      "red_flag": false,
+      "severity_rationale": "No significant risks identified in the governing law clause."
+    }
+  ],
+  "scripts": [
+    {
+      "clause_id": 2,
+      "clause_type": "Payment Terms",
+      "negotiation_script": "Regarding the payment terms, the current clause allows the Client to withhold payment at their sole discretion, which poses a financial risk for us. We propose that any payment withholding should be based on specific, documented deficiencies in the work, with a resolution period to address any issues, and payment should be made within thirty (30) days of invoice receipt."
+    },
+    {
+      "clause_id": 3,
+      "clause_type": "Indemnification",
+      "negotiation_script": "The indemnification clause currently imposes unlimited liability on us, which is concerning. We propose capping our indemnification obligation to the total fees paid under this agreement, which aligns with industry standards and ensures a balanced risk distribution."
+    },
+    {
+      "clause_id": 4,
+      "clause_type": "Intellectual Property",
+      "negotiation_script": "The intellectual property clause grants exclusive ownership of all work product to the Client, which is quite broad. We suggest that pre-existing materials, tools, and know-how remain our property, while the Client retains ownership of the work product for their internal purposes."
+    },
+    {
+      "clause_id": 5,
+      "clause_type": "Non-Compete",
+      "negotiation_script": "The five-year non-compete clause significantly restricts our future opportunities. We propose reducing the duration to one year and limiting the scope to direct competitors within a specific geographic region, ensuring it is reasonable and enforceable."
+    },
+    {
+      "clause_id": 6,
+      "clause_type": "Termination",
+      "negotiation_script": "The termination clause currently allows the Client to terminate immediately without notice, which creates an imbalance. We propose a mutual termination notice period of thirty (30) days, providing both parties with adequate time to transition or resolve issues."
+    },
+    {
+      "clause_id": 7,
+      "clause_type": "Liability Cap",
+      "negotiation_script": "The liability cap clause imposes unlimited liability on us while capping the Client's liability at a very low amount. We propose setting a mutual liability cap at the total contract value, ensuring a fair and balanced approach to risk management."
+    }
+  ]
+}

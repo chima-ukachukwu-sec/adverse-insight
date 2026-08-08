@@ -1,229 +1,306 @@
-import streamlit as st
-import pdfplumber
-import plotly.graph_objects as go
-from agents import extract_clauses, score_clauses, draft_negotiation_points
+"""
+Adverse Insight: a three-agent chain that reads a contract, scores every clause
+for hidden risk, and drafts the counter-proposal.
 
-# ──────────────────────────────────────
-# PAGE CONFIG
-# ──────────────────────────────────────
+The agent chain in agents/ is deliberately untouched by this file. This is the
+presentation layer only: it decides what to show and in what order, never what
+a clause is worth. Keeping that line clean is what lets the case study describe
+the chain's behaviour without the write-up going stale every time the UI moves.
+"""
+
+import html
+import json
+import os
+from pathlib import Path
+
+import plotly.graph_objects as go
+import streamlit as st
+
+from ui.theme import (ACCENT, BG, BG_CARD, BORDER, DANGER, OK, TEXT,
+                      TEXT_MUTED, CSS, meter, pipeline, risk_band)
+
 st.set_page_config(
     page_title="Adverse Insight | AI Contract Risk Analyzer",
     page_icon="⚖️",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="collapsed",
+)
+st.markdown(CSS, unsafe_allow_html=True)
+
+AXES = [
+    ("financial_liability", "Financial liability"),
+    ("termination_asymmetry", "Termination asymmetry"),
+    ("data_rights_risk", "Data rights"),
+]
+SAMPLE = Path(__file__).parent / "samples" / "analysis.json"
+
+
+def esc(v) -> str:
+    return html.escape(str(v if v is not None else ""))
+
+
+def peak(scored: dict) -> int:
+    """
+    Highest score across all three axes.
+
+    The previous build read financial_liability alone while labelling the result
+    "Highest Risk Score", so a contract whose worst problem was a one-sided
+    termination clause reported a lower peak than it had.
+    """
+    return max(int(scored.get(k) or 0) for k, _ in AXES)
+
+
+# ── state ─────────────────────────────────────────────────────────────────
+for key in ("clauses", "scored", "scripts", "stage", "source"):
+    st.session_state.setdefault(key, None)
+st.session_state.setdefault("stage", 0)
+st.session_state.setdefault("only_flagged", False)
+
+
+# ── hero ──────────────────────────────────────────────────────────────────
+st.markdown(
+    '<div class="ai-eyebrow">Three-agent chain · contract risk triage</div>'
+    '<h1 class="ai-title">Adverse Insight</h1>'
+    '<p class="ai-sub">Upload a contract. One agent splits it into clauses, a second '
+    'scores each clause adversarially on three axes, and a third drafts the language '
+    'you would send back. The clauses that hurt are rarely the hostile-sounding ones; '
+    'they are the buried ones.</p>',
+    unsafe_allow_html=True,
 )
 
-# ──────────────────────────────────────
-# SIDEBAR
-# ──────────────────────────────────────
-with st.sidebar:
-    st.title("⚖️ Adverse Insight")
-    st.caption("AI-Powered Contract Risk Triage")
-    st.divider()
-    st.markdown("""
-    **How it works:**
-    1. Upload any contract (PDF/TXT)
-    2. AI extracts every clause
-    3. Each clause is scored for financial, termination, and data risk
-    4. Red-flagged clauses get negotiation scripts
-    """)
-    st.divider()
-    st.caption("Built for the Codex Creator Challenge")
-    st.markdown("[GitHub Repo](https://github.com/chima-ukachukwu-sec/adverse-insight)")
-    
-    st.divider()
-    st.markdown("### Sample Contracts")
-    st.markdown("Need a contract to test?")
-    st.markdown("- [Any Terms of Service](https://tosdr.org)")
-    st.markdown("- [Sample Employment Agreement](https://www.lawdepot.com)")
-    st.markdown("- Your own job offer letter")
+col_up, col_demo = st.columns([3, 2])
+with col_up:
+    uploaded = st.file_uploader("Contract (PDF or TXT)", type=["pdf", "txt"],
+                                label_visibility="collapsed")
+with col_demo:
+    use_sample = st.button("Load a sample analysis", use_container_width=True,
+                           help="A saved run against a deliberately one-sided "
+                                "contract. Costs nothing and makes no API call.")
 
-# ──────────────────────────────────────
-# MAIN CONTENT
-# ──────────────────────────────────────
-st.title("Adverse Insight")
-st.subheader("AI Agent Chain for Contract Risk Analysis")
+has_key = bool(os.getenv("OPENAI_API_KEY"))
+if not has_key and not st.session_state.scored:
+    st.markdown(
+        f'<p class="note">No API key is configured on this instance, so live analysis '
+        f'is unavailable. The sample run below is a real saved result and shows exactly '
+        f'what the chain produces.</p>', unsafe_allow_html=True)
 
-uploaded_file = st.file_uploader(
-    "Upload a contract (PDF or TXT)",
-    type=["pdf", "txt"],
-    help="Your document is processed locally. No data is stored."
-)
 
-if uploaded_file:
-    # ── TEXT EXTRACTION ──
-    with st.spinner("📄 Extracting text from document..."):
-        if uploaded_file.type == "application/pdf":
-            with pdfplumber.open(uploaded_file) as pdf:
-                contract_text = "\n".join([page.extract_text() or "" for page in pdf.pages])
-        else:
-            contract_text = uploaded_file.read().decode("utf-8")
-        
-        # Pre-flight guard: prevent garbage-in
-        if len(contract_text.strip()) < 100:
-            st.error("⚠️ Could not extract sufficient text. The document may be a scanned image or empty. Please upload a text-based PDF or TXT file.")
-            st.stop()
-        
-        word_count = len(contract_text.split())
-        st.success(f"✅ Extracted {word_count} words from document.")
-    
-    # ── AGENT CHAIN EXECUTION ──
-    if "clauses" not in st.session_state:
-        st.session_state.clauses = None
-        st.session_state.scored_clauses = None
-        st.session_state.negotiation_points = None
-    
-    if st.button("🔍 Analyze Contract", type="primary", use_container_width=True):
-        # Agent 1: Extract
-        with st.spinner("🤖 Agent 1: Extracting clauses..."):
-            st.session_state.clauses = extract_clauses(contract_text)
-            st.success(f"Extracted {len(st.session_state.clauses)} clauses.")
-        
-        # Agent 2: Score
-        with st.spinner("🔴 Agent 2: Scoring risk..."):
-            st.session_state.scored_clauses = score_clauses(st.session_state.clauses)
-            red_flags = [c for c in st.session_state.scored_clauses if c.get("red_flag")]
-            st.success(f"Identified {len(red_flags)} red-flagged clauses.")
-        
-        # Agent 3: Negotiate
-        if red_flags:
-            with st.spinner("📝 Agent 3: Drafting negotiation points..."):
-                red_flagged_input = []
-                for scored in red_flags:
-                    original = next((c for c in st.session_state.clauses if c["clause_id"] == scored["clause_id"]), None)
-                    if original:
-                        red_flagged_input.append({
-                            "clause_id": scored["clause_id"],
-                            "clause_type": scored.get("clause_type", original.get("clause_type")),
-                            "source_quote": original.get("source_quote", ""),
-                            "severity_rationale": scored.get("severity_rationale", "")
-                        })
-                st.session_state.negotiation_points = draft_negotiation_points(red_flagged_input)
-                st.success(f"Drafted {len(st.session_state.negotiation_points)} negotiation scripts.")
-    
-    # ── RESULTS DISPLAY ──
-    if st.session_state.scored_clauses:
-        st.divider()
-        
-        # Tab layout for organized viewing
-        tab1, tab2, tab3 = st.tabs(["📊 Risk Dashboard", "📋 Clause Details", "📝 Negotiation Scripts"])
-        
-        with tab1:
-            st.subheader("Risk Overview")
-            
-            # Calculate averages for radar chart
-            avg_financial = sum(c.get("financial_liability", 0) for c in st.session_state.scored_clauses) / len(st.session_state.scored_clauses)
-            avg_termination = sum(c.get("termination_asymmetry", 0) for c in st.session_state.scored_clauses) / len(st.session_state.scored_clauses)
-            avg_data = sum(c.get("data_rights_risk", 0) for c in st.session_state.scored_clauses) / len(st.session_state.scored_clauses)
-            
-            # Radar chart
-            categories = ['Financial Liability', 'Termination Asymmetry', 'Data Rights Risk']
-            contract_values = [avg_financial, avg_termination, avg_data]
-            market_values = [30, 25, 20]  # Market standard benchmarks
-            
-            fig = go.Figure()
-            fig.add_trace(go.Scatterpolar(
-                r=contract_values + [contract_values[0]],
-                theta=categories + [categories[0]],
-                fill='toself',
-                name='This Contract',
-                line_color='red'
-            ))
-            fig.add_trace(go.Scatterpolar(
-                r=market_values + [market_values[0]],
-                theta=categories + [categories[0]],
-                fill='toself',
-                name='Market Standard',
-                line_color='green'
-            ))
-            fig.update_layout(
-                polar=dict(radialaxis=dict(visible=True, range=[0, 100])),
-                showlegend=True,
-                margin=dict(l=80, r=80, t=40, b=40),
-                legend=dict(
-                    orientation="h",
-                    yanchor="bottom",
-                    y=-0.2,
-                    xanchor="center",
-                    x=0.5
-                )
-            )
-            
-            col1, col2 = st.columns([1, 1])
-            with col1:
-                st.plotly_chart(fig, use_container_width=True)
-            with col2:
-                st.metric("Total Clauses", len(st.session_state.clauses))
-                red_count = len([c for c in st.session_state.scored_clauses if c.get("red_flag")])
-                st.metric("Red-Flagged Clauses", red_count, delta=f"{red_count} critical" if red_count > 0 else None, delta_color="inverse")
-                st.metric("Highest Risk Score", f"{max(c.get('financial_liability', 0) for c in st.session_state.scored_clauses)}/100")
-                st.caption("Scores above 70 indicate clauses you should negotiate or reject.")
-        
-        with tab2:
-            st.subheader("Clause-by-Clause Analysis")
-            
-            for scored in st.session_state.scored_clauses:
-                original = next((c for c in st.session_state.clauses if c["clause_id"] == scored["clause_id"]), None)
-                
-                if scored.get("red_flag"):
-                    expander_label = f"🔴 Clause {scored['clause_id']}: {original.get('clause_type', 'Unknown')} — HIGH RISK"
-                else:
-                    expander_label = f"🟢 Clause {scored['clause_id']}: {original.get('clause_type', 'Unknown')}"
-                
-                with st.expander(expander_label):
-                    if original:
-                        st.caption("**Source Quote:**")
-                        st.info(original.get("source_quote", "N/A"))
-                        st.caption("**Plain English:**")
-                        st.write(original.get("plain_english_summary", "N/A"))
-                    
-                    st.divider()
-                    st.caption("**Risk Assessment:**")
-                    col_a, col_b, col_c = st.columns(3)
-                    col_a.metric("Financial Risk", f"{scored.get('financial_liability', 'N/A')}/100")
-                    col_b.metric("Termination Risk", f"{scored.get('termination_asymmetry', 'N/A')}/100")
-                    col_c.metric("Data Rights Risk", f"{scored.get('data_rights_risk', 'N/A')}/100")
-                    st.write(f"**Rationale:** {scored.get('severity_rationale', 'N/A')}")
-        
-        with tab3:
-            st.subheader("Auto-Generated Negotiation Scripts")
-            
-            if st.session_state.negotiation_points:
-                # Single download button for all scripts
-                all_scripts = "\n\n---\n\n".join([
-                    f"**Re: {n.get('clause_type', 'Clause')} (Clause {n.get('clause_id', 'N/A')})**\n{n.get('negotiation_script', '')}"
-                    for n in st.session_state.negotiation_points
+# ── sample path: a real saved run, no API call ────────────────────────────
+if use_sample and SAMPLE.exists():
+    data = json.loads(SAMPLE.read_text())
+    st.session_state.clauses = data["clauses"]
+    st.session_state.scored = data["scored"]
+    st.session_state.scripts = data["scripts"]
+    st.session_state.source = "sample"
+    st.session_state.stage = 3
+
+
+# ── live path ─────────────────────────────────────────────────────────────
+if uploaded is not None:
+    import pdfplumber
+    if uploaded.type == "application/pdf":
+        with pdfplumber.open(uploaded) as pdf:
+            text = "\n".join(p.extract_text() or "" for p in pdf.pages)
+    else:
+        text = uploaded.read().decode("utf-8", errors="replace")
+
+    if len(text.strip()) < 100:
+        st.error("Could not extract enough text. A scanned image will not work; "
+                 "this needs a text-based PDF or a .txt file.")
+        st.stop()
+
+    st.markdown(f'<p class="note">{len(text.split()):,} words extracted from '
+                f'<code>{esc(uploaded.name)}</code>.</p>', unsafe_allow_html=True)
+
+    if st.button("Run the agent chain", type="primary", disabled=not has_key):
+        slot = st.empty()
+        try:
+            # Imported here rather than at module scope: agents/utils.py builds
+            # the OpenAI client on import, which raises when no key is set. A
+            # keyless instance should still load and still show the sample.
+            from agents import (draft_negotiation_points, extract_clauses,
+                                score_clauses)
+            slot.markdown(pipeline(0), unsafe_allow_html=True)
+            clauses = extract_clauses(text)
+
+            slot.markdown(pipeline(1), unsafe_allow_html=True)
+            scored = score_clauses(clauses)
+
+            flagged = [s for s in scored if s.get("red_flag")]
+            scripts = []
+            if flagged:
+                slot.markdown(pipeline(2), unsafe_allow_html=True)
+                by_id = {c["clause_id"]: c for c in clauses}
+                scripts = draft_negotiation_points([
+                    {
+                        "clause_id": s["clause_id"],
+                        "clause_type": s.get("clause_type")
+                        or by_id.get(s["clause_id"], {}).get("clause_type", "Clause"),
+                        "source_quote": by_id.get(s["clause_id"], {}).get("source_quote", ""),
+                        "severity_rationale": s.get("severity_rationale", ""),
+                    }
+                    for s in flagged
                 ])
-                
-                st.download_button(
-                    label="📧 Download Negotiation Scripts (.txt)",
-                    data=all_scripts,
-                    file_name="adverse_insight_negotiation_points.txt",
-                    mime="text/plain"
-                )
-                
-                st.divider()
-                
-                for n in st.session_state.negotiation_points:
-                    st.markdown(f"### {n.get('clause_type', 'Clause')} (Clause {n.get('clause_id', 'N/A')})")
-                    st.success(n.get('negotiation_script', 'N/A'))
-            else:
-                st.info("No red-flagged clauses detected. This contract appears balanced. No negotiation points needed.")
-        
-        # ── DISCLAIMER ──
-        st.divider()
-        st.caption("⚠️ **Disclaimer:** Adverse Insight provides AI-generated educational content intended to help you understand contracts better. It is NOT legal advice. Always consult a qualified legal professional before making decisions based on contract terms.")
+            slot.markdown(pipeline(3), unsafe_allow_html=True)
+            st.session_state.update(clauses=clauses, scored=scored,
+                                    scripts=scripts, stage=3, source="live")
+        except Exception as exc:  # noqa: BLE001 - surfaced to the user deliberately
+            slot.empty()
+            st.error(f"The chain stopped: {type(exc).__name__}. "
+                     f"Nothing was saved. Detail: {exc}")
+
+
+# ── results ───────────────────────────────────────────────────────────────
+clauses, scored = st.session_state.clauses, st.session_state.scored
+if clauses and scored:
+    by_id = {c["clause_id"]: c for c in clauses}
+    flagged = [s for s in scored if s.get("red_flag")]
+    worst = max((peak(s) for s in scored), default=0)
+    band, band_colour = risk_band(worst)
+
+    st.markdown(pipeline(3), unsafe_allow_html=True)
+    if st.session_state.source == "sample":
+        st.markdown('<p class="note">Showing a saved sample run. No API call was made.</p>',
+                    unsafe_allow_html=True)
+
+    st.markdown(
+        f'<div class="tiles">'
+        f'<div class="tile"><div class="k">Clauses</div><div class="v">{len(clauses)}</div>'
+        f'<div class="c">extracted verbatim</div></div>'
+        f'<div class="tile"><div class="k">Red flagged</div>'
+        f'<div class="v" style="color:{DANGER if flagged else OK}">{len(flagged)}</div>'
+        f'<div class="c">{round(100 * len(flagged) / max(1, len(scored)))}% of the contract</div></div>'
+        f'<div class="tile"><div class="k">Peak risk</div>'
+        f'<div class="v" style="color:{band_colour}">{worst}<span style="font-size:.9rem;'
+        f'color:{TEXT_MUTED}">/100</span></div>'
+        f'<div class="c">worst single axis, {band}</div></div>'
+        f'<div class="tile"><div class="k">Scripts</div>'
+        f'<div class="v">{len(st.session_state.scripts or [])}</div>'
+        f'<div class="c">ready to send</div></div>'
+        f'</div>', unsafe_allow_html=True)
+
+    tab_over, tab_clauses, tab_scripts = st.tabs(
+        ["Risk profile", f"Clauses ({len(clauses)})",
+         f"Negotiation ({len(st.session_state.scripts or [])})"])
+
+    # ---- overview ----
+    with tab_over:
+        avg = {k: sum(int(s.get(k) or 0) for s in scored) / len(scored) for k, _ in AXES}
+        labels = [lbl for _, lbl in AXES]
+        mine = [round(avg[k]) for k, _ in AXES]
+        market = [30, 25, 20]
+
+        fig = go.Figure()
+        fig.add_trace(go.Scatterpolar(
+            r=market + market[:1], theta=labels + labels[:1], fill="toself",
+            name="Market standard", line=dict(color=OK, width=2),
+            fillcolor="rgba(39,201,63,0.12)"))
+        fig.add_trace(go.Scatterpolar(
+            r=mine + mine[:1], theta=labels + labels[:1], fill="toself",
+            name="This contract", line=dict(color=DANGER, width=2),
+            fillcolor="rgba(255,95,86,0.18)"))
+        fig.update_layout(
+            polar=dict(
+                bgcolor=BG_CARD,
+                radialaxis=dict(visible=True, range=[0, 100], gridcolor=BORDER,
+                                tickfont=dict(color=TEXT_MUTED, size=10), linecolor=BORDER),
+                angularaxis=dict(gridcolor=BORDER, tickfont=dict(color=TEXT, size=12),
+                                 linecolor=BORDER)),
+            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+            font=dict(family="Inter, sans-serif", color=TEXT),
+            legend=dict(orientation="h", y=-0.12, x=.5, xanchor="center",
+                        font=dict(color=TEXT_MUTED, size=11)),
+            margin=dict(l=70, r=70, t=30, b=50), height=420)
+
+        c1, c2 = st.columns([3, 2])
+        with c1:
+            st.plotly_chart(fig, use_container_width=True,
+                            config={"displayModeBar": False})
+        with c2:
+            st.markdown('<div style="padding-top:1.2rem">', unsafe_allow_html=True)
+            for key, label in AXES:
+                st.markdown(meter(label, round(avg[key])), unsafe_allow_html=True)
+                st.markdown('<div style="height:.7rem"></div>', unsafe_allow_html=True)
+            st.markdown(
+                f'<p class="note">Averaged across every clause, against a market-standard '
+                f'baseline. Anything above 70 on a single clause is worth negotiating or '
+                f'refusing. The baseline is a fixed reference, not a measured benchmark.</p>'
+                '</div>', unsafe_allow_html=True)
+
+    # ---- clauses ----
+    with tab_clauses:
+        st.session_state.only_flagged = st.toggle(
+            "Red-flagged only", value=st.session_state.only_flagged)
+        rows = sorted(scored, key=peak, reverse=True)
+        if st.session_state.only_flagged:
+            rows = [s for s in rows if s.get("red_flag")]
+        st.markdown(f'<p class="note">Sorted by worst axis, highest first. '
+                    f'Showing {len(rows)} of {len(scored)}.</p>', unsafe_allow_html=True)
+
+        for s in rows:
+            src = by_id.get(s["clause_id"], {})
+            flag = bool(s.get("red_flag"))
+            ctype = esc(s.get("clause_type") or src.get("clause_type") or "Clause")
+            body = [
+                f'<div class="clause {"flag" if flag else "clean"}">',
+                f'<div class="clause-head"><div><span class="clause-type">{ctype}</span> '
+                f'<span class="clause-id">clause {esc(s.get("clause_id"))}</span></div>'
+                f'<span class="badge {"high" if flag else "low"}">'
+                f'{"red flag" if flag else "clear"}</span></div>',
+            ]
+            if src.get("source_quote"):
+                body.append(f'<div class="quote">{esc(src["source_quote"])}</div>')
+            if src.get("plain_english_summary"):
+                body.append(f'<div class="plain">{esc(src["plain_english_summary"])}</div>')
+            body.append('<div class="meters">'
+                        + "".join(meter(lbl, int(s.get(k) or 0)) for k, lbl in AXES)
+                        + "</div>")
+            if s.get("severity_rationale"):
+                body.append(f'<div class="rationale"><b>Why:</b> '
+                            f'{esc(s["severity_rationale"])}</div>')
+            # Surfaced deliberately: the scorer has always produced this and the
+            # previous UI dropped it on the floor.
+            if s.get("jurisdiction_note"):
+                body.append(f'<div class="juris">{esc(s["jurisdiction_note"])}</div>')
+            body.append("</div>")
+            st.markdown("".join(body), unsafe_allow_html=True)
+
+    # ---- scripts ----
+    with tab_scripts:
+        scripts = st.session_state.scripts or []
+        if not scripts:
+            st.markdown('<p class="note">Nothing was red-flagged, so there is nothing '
+                        'to push back on. That is a result, not an empty state.</p>',
+                        unsafe_allow_html=True)
+        else:
+            st.download_button(
+                "Download all scripts (.txt)",
+                data="\n\n---\n\n".join(
+                    f"Re: {n.get('clause_type', 'Clause')} (clause {n.get('clause_id')})\n"
+                    f"{n.get('negotiation_script', '')}" for n in scripts),
+                file_name="adverse-insight-negotiation-points.txt", mime="text/plain")
+            st.markdown('<div style="height:.9rem"></div>', unsafe_allow_html=True)
+            for n in scripts:
+                st.markdown(
+                    f'<div class="script"><div class="sh">{esc(n.get("clause_type", "Clause"))} '
+                    f'<span class="clause-id">clause {esc(n.get("clause_id"))}</span></div>'
+                    f'<div class="sb">{esc(n.get("negotiation_script", ""))}</div></div>',
+                    unsafe_allow_html=True)
+
+    st.markdown(
+        f'<div style="margin-top:2rem;padding-top:1rem;border-top:1px solid {BORDER}">'
+        f'<p class="note"><b style="color:{TEXT}">Not legal advice.</b> This is '
+        f'AI-generated analysis to help you read a contract more carefully, not a '
+        f'substitute for a lawyer. Scores are a model\'s judgement and will vary '
+        f'between runs.</p></div>', unsafe_allow_html=True)
 
 else:
-    # ── EMPTY STATE ──
-    st.info("👆 Upload a contract to begin analysis.")
-    
-    st.divider()
-    st.markdown("""
-    ### What this tool does:
-    - **Extracts** every clause from your document
-    - **Scores** each clause on financial, termination, and data risk
-    - **Flags** problematic clauses in red
-    - **Drafts** negotiation scripts you can use immediately
-    
-    Built with a **3-agent AI chain** — extraction, adversarial scoring, and negotiation drafting — all orchestrated through Codex and the OpenAI API.
-    """)
+    st.markdown(pipeline(0), unsafe_allow_html=True)
+    st.markdown(
+        f'<p class="note" style="margin-top:1rem">Built in 48 hours for the Codex '
+        f'Creator Challenge. Source on '
+        f'<a href="https://github.com/chima-ukachukwu-sec/adverse-insight" '
+        f'style="color:{ACCENT}">GitHub</a>, and a write-up of how it was built and '
+        f'how it holds up under prompt injection at '
+        f'<a href="https://chimaukachukwu.com/portfolio/case-studies/adverse-insight.html" '
+        f'style="color:{ACCENT}">chimaukachukwu.com</a>.</p>', unsafe_allow_html=True)
